@@ -1,0 +1,201 @@
+import { useState, useRef, useEffect } from 'react';
+import type { KeyboardDevice } from '../models/KeyboardDevice';
+import { KeyRemapper, KeyRemapperActionButton } from './KeyRemapper';
+import { LightingControls } from './LightingControls';
+import { KeyboardSelector } from './KeyboardSelector';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { TriangleAlert, ExternalLink } from 'lucide-react';
+import type { ImageManifest } from '../utils/buildImageManifest';
+import { useDevices } from '../hooks/useDevices';
+import { getRKDevices } from '../utils/rkConfig';
+import { isRKWebSoftwareSupported, RK_WEB_SOFTWARE_URL } from '../constants/rkWebSoftware';
+
+type Tab = 'keys' | 'lighting';
+
+interface DeviceEditorProps {
+  device: KeyboardDevice;
+  imageManifest?: ImageManifest;
+  onDisconnect: (device: KeyboardDevice) => Promise<void>;
+}
+
+export function DeviceEditor({ device, imageManifest, onDisconnect }: DeviceEditorProps) {
+  const [activeTab, setActiveTab] = useState<Tab>('keys');
+  const lightingTabVisitedRef = useRef(false);
+  const [showKeyboardSwitcher, setShowKeyboardSwitcher] = useState(false);
+  const [keyboards, setKeyboards] = useState<Array<{ pid: string; name: string }>>([]);
+  const { switchDemoKeyboard } = useDevices();
+
+  const isDemo = !!device.isDemo;
+
+  // Load keyboards for switcher
+  useEffect(() => {
+    if (isDemo) {
+      getRKDevices().then(devices => {
+        const kbList = Array.from(devices.entries()).map(([pid, name]) => ({ pid, name }));
+        setKeyboards(kbList);
+      });
+    }
+  }, [isDemo]);
+
+  // Track when lighting tab is visited for the first time
+  if (activeTab === 'lighting') {
+    lightingTabVisitedRef.current = true;
+  }
+
+  const handleSwitchKeyboard = async (pid: string) => {
+    await switchDemoKeyboard(pid);
+    setShowKeyboardSwitcher(false);
+  };
+
+  return (
+    <div className="space-y-8">
+      {/* DEMO MODE WARNING BANNER */}
+      {isDemo && (
+        <Alert variant="primary">
+          <TriangleAlert className="h-5 w-5" />
+          <AlertDescription className="text-card-foreground">
+            <div className="flex flex-col gap-2">
+              <div className="font-bold text-base">DEMO MODE - No Keyboard Connected</div>
+              <div className="text-sm">
+                You are exploring the interface without a physical keyboard. All operations are simulated — changes are not saved and nothing is written to hardware.
+              </div>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* OFFICIAL RK WEB SOFTWARE BANNER */}
+      {isRKWebSoftwareSupported(device.config.pid) && (
+        <Alert variant="primary">
+          <ExternalLink className="h-4 w-4" />
+          <AlertDescription className="text-sm">
+            <p>This keyboard is also supported by <a href={RK_WEB_SOFTWARE_URL} target="_blank" rel="noopener noreferrer" className="font-medium text-primary hover:underline">RK&apos;s official web configurator</a>, which has full support for macros and media keys.</p>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <Card refract>
+        <CardContent>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">
+                {isDemo ? 'Demo Keyboard' : 'Connected Device'}
+              </p>
+              <h2 className="text-lg font-semibold text-card-foreground">
+                {device.config.name}
+                {isDemo && <span className="ml-2 text-sm font-medium text-primary">(DEMO)</span>}
+              </h2>
+              <p className="text-sm font-normal text-muted-foreground mt-1">
+                <span className="whitespace-nowrap">VID: {device.hidDevice.vendorId.toString(16).toUpperCase().padStart(4, '0')}</span>
+                {' · '}
+                <span className="whitespace-nowrap">PID: {device.config.pid.toUpperCase()}</span>
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {isDemo && (
+                <Button
+                  onClick={() => setShowKeyboardSwitcher(!showKeyboardSwitcher)}
+                  variant="secondary"
+                  size="sm"
+                >
+                  Switch Keyboard
+                </Button>
+              )}
+              <Button
+                onClick={() => onDisconnect(device)}
+                variant="outline"
+                size="sm"
+              >
+                {isDemo ? 'Exit Demo' : 'Disconnect'}
+              </Button>
+            </div>
+          </div>
+
+          {/* Keyboard Switcher */}
+          {isDemo && showKeyboardSwitcher && (
+            <div className="mt-4 pt-4 border-t border-border">
+              <KeyboardSelector
+                keyboards={keyboards}
+                onSelect={handleSwitchKeyboard}
+                currentPid={device.config.pid}
+                showRandom={true}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Tab switcher - only show if keyboard has lighting */}
+      {device.config.lightEnabled && (
+        <Card className="overflow-hidden">
+          <div className="flex flex-col items-center gap-4 py-4 px-6">
+            <div
+              className="lg-segmented shrink-0"
+              role="tablist"
+              aria-label="Device configuration tabs"
+              style={{ '--lg-index': activeTab === 'keys' ? 0 : 1, '--lg-count': 2 } as React.CSSProperties}
+            >
+              <span className="lg-segmented-thumb" aria-hidden="true" />
+              <button
+                onClick={() => setActiveTab('keys')}
+                role="tab"
+                aria-selected={activeTab === 'keys'}
+                aria-controls="keys-panel"
+                id="keys-tab"
+                className="lg-segmented-item"
+              >
+                Key Mapping
+              </button>
+              <button
+                onClick={() => setActiveTab('lighting')}
+                role="tab"
+                aria-selected={activeTab === 'lighting'}
+                aria-controls="lighting-panel"
+                id="lighting-tab"
+                className="lg-segmented-item"
+              >
+                Lighting
+              </button>
+            </div>
+            {activeTab === 'keys' && <KeyRemapperActionButton device={device} />}
+          </div>
+          <CardContent>
+            <div
+              id="keys-panel"
+              role="tabpanel"
+              aria-labelledby="keys-tab"
+              className={activeTab === 'keys' ? '' : 'hidden'}
+            >
+              <KeyRemapper device={device} imageManifest={imageManifest} />
+            </div>
+            {/* Lazy load lighting tab - only mount on first visit, then keep mounted */}
+            {lightingTabVisitedRef.current && (
+              <div
+                id="lighting-panel"
+                role="tabpanel"
+                aria-labelledby="lighting-tab"
+                className={activeTab === 'lighting' ? '' : 'hidden'}
+              >
+                <LightingControls
+                  device={device}
+                  initialSettings={device.lightingSettings}
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* No tabs if keyboard doesn't have lighting */}
+      {!device.config.lightEnabled && (
+        <Card>
+          <CardContent>
+            <KeyRemapper device={device} imageManifest={imageManifest} />
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,973 @@
+/*
+ * Liquid Glass design system for Kludge Knight.
+ *
+ * Plain CSS on purpose (no Tailwind directives) so it can be read and tested on
+ * its own. Everything lives in `@layer components`, which means Tailwind
+ * utilities (`px-4`, `gap-2`, ...) can still override it on a per-element basis.
+ *
+ * The look follows the same recipe as the Liquid DOM renderer:
+ *   1. a vivid backdrop for the glass to sit on           -> .lg-wallpaper
+ *   2. blur + saturation of that backdrop                 -> backdrop-filter
+ *   3. a translucent tint                                 -> --lg-fill
+ *   4. a directional specular rim (light from top-left)   -> ::before + inset shadows
+ *   5. soft ambient shadow, springy press feedback        -> --lg-shadow, --lg-spring
+ *   6. edge refraction (optional, JS)                     -> useGlassRefraction()
+ *
+ * Colours are derived from the active theme preset (`--primary`, `--foreground`,
+ * `--background`), so the tweakcn theme picker keeps working.
+ *
+ * NOTE ON NESTING: an element with `backdrop-filter` becomes a "backdrop root",
+ * so glass nested inside glass cannot see the wallpaper anymore. Only top-level
+ * panels blur (through their ::before layer); nested surfaces use tint + rim.
+ */
+
+@layer components {
+  :root {
+    /* ---- Motion --------------------------------------------------------- */
+    --lg-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --lg-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+    /* ---- Optics --------------------------------------------------------- */
+    --lg-blur: 14px;
+    --lg-saturate: 1.7;
+
+    /* ---- Light mode glass ------------------------------------------------ */
+    --lg-fill: color-mix(in oklab, #fff 42%, transparent);
+    --lg-fill-hover: color-mix(in oklab, #fff 58%, transparent);
+    --lg-fill-strong: color-mix(in oklab, #fff 72%, transparent);
+    --lg-well: color-mix(in oklab, var(--foreground) 7%, transparent);
+    --lg-well-strong: color-mix(in oklab, var(--foreground) 11%, transparent);
+    --lg-edge: rgb(255 255 255 / 0.95);
+    --lg-edge-dim: rgb(255 255 255 / 0.34);
+    --lg-glow: rgb(255 255 255 / 0.42);
+    --lg-sheen: rgb(255 255 255 / 0.3);
+    --lg-inner-shade: rgb(15 23 42 / 0.07);
+    --lg-shadow:
+      0 1px 2px rgb(15 23 42 / 0.06),
+      0 10px 30px -10px rgb(15 23 42 / 0.2),
+      0 24px 48px -24px rgb(15 23 42 / 0.16);
+    --lg-shadow-small:
+      0 1px 1px rgb(15 23 42 / 0.1),
+      0 6px 14px -6px rgb(15 23 42 / 0.22);
+
+    /* ---- Wallpaper ------------------------------------------------------- */
+    --lg-hue-a: color-mix(in oklab, var(--primary) 70%, white);
+    --lg-hue-b: color-mix(in oklab, var(--primary) 45%, #ff7ad9);
+    --lg-hue-c: color-mix(in oklab, var(--primary) 40%, #ffc45c);
+    --lg-wallpaper-base: color-mix(in oklab, var(--primary) 10%, #f4f6ff);
+    --lg-blob-opacity: 0.75;
+
+    /* ---- Derived theme surfaces (mapped in index.css @theme) ------------ */
+    --lg-card: var(--lg-fill);
+    --lg-popover: color-mix(in oklab, var(--background) 68%, transparent);
+    --lg-muted: var(--lg-well);
+    --lg-secondary: color-mix(in oklab, var(--foreground) 10%, transparent);
+    --lg-accent: color-mix(in oklab, var(--primary) 16%, transparent);
+    --lg-border: color-mix(in oklab, var(--foreground) 13%, transparent);
+    --lg-input: color-mix(in oklab, var(--foreground) 16%, transparent);
+  }
+
+  @supports (color: oklch(from red l c h)) {
+    :root {
+      /* Rotate the theme's primary hue so the wallpaper stays harmonious. */
+      --lg-hue-b: oklch(from var(--primary) 0.8 calc(c * 0.9 + 0.03) calc(h + 62));
+      --lg-hue-c: oklch(from var(--primary) 0.86 calc(c * 0.8 + 0.03) calc(h - 58));
+    }
+  }
+
+  .dark {
+    --lg-fill: color-mix(in oklab, #fff 9%, transparent);
+    --lg-fill-hover: color-mix(in oklab, #fff 15%, transparent);
+    --lg-fill-strong: color-mix(in oklab, #fff 22%, transparent);
+    --lg-well: rgb(0 0 0 / 0.26);
+    --lg-well-strong: rgb(0 0 0 / 0.38);
+    --lg-edge: rgb(255 255 255 / 0.42);
+    --lg-edge-dim: rgb(255 255 255 / 0.11);
+    --lg-glow: rgb(255 255 255 / 0.16);
+    --lg-sheen: rgb(255 255 255 / 0.08);
+    --lg-inner-shade: rgb(0 0 0 / 0.3);
+    --lg-shadow:
+      0 1px 2px rgb(0 0 0 / 0.35),
+      0 14px 34px -10px rgb(0 0 0 / 0.6),
+      0 28px 56px -24px rgb(0 0 0 / 0.5);
+    --lg-shadow-small:
+      0 1px 1px rgb(0 0 0 / 0.4),
+      0 6px 14px -6px rgb(0 0 0 / 0.6);
+
+    --lg-hue-a: color-mix(in oklab, var(--primary) 55%, #000);
+    --lg-hue-b: color-mix(in oklab, var(--primary) 40%, #7a1fa2);
+    --lg-hue-c: color-mix(in oklab, var(--primary) 35%, #0b6b6b);
+    --lg-wallpaper-base: color-mix(in oklab, var(--primary) 8%, #07080d);
+    --lg-blob-opacity: 0.65;
+
+    --lg-popover: color-mix(in oklab, var(--background) 62%, transparent);
+    --lg-secondary: color-mix(in oklab, #fff 11%, transparent);
+    --lg-border: rgb(255 255 255 / 0.14);
+    --lg-input: rgb(255 255 255 / 0.18);
+  }
+
+  @supports (color: oklch(from red l c h)) {
+    .dark {
+      --lg-hue-b: oklch(from var(--primary) 0.45 calc(c * 0.9 + 0.03) calc(h + 62));
+      --lg-hue-c: oklch(from var(--primary) 0.48 calc(c * 0.8 + 0.03) calc(h - 58));
+    }
+  }
+
+  /* ======================================================================
+   * Wallpaper
+   * ==================================================================== */
+
+  .lg-wallpaper {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    background-color: var(--lg-wallpaper-base);
+  }
+
+  .lg-blob {
+    position: absolute;
+    width: 62vmax;
+    height: 62vmax;
+    border-radius: 50%;
+    opacity: var(--lg-blob-opacity);
+    will-change: transform;
+  }
+
+  .lg-blob-a {
+    top: -22vmax;
+    left: -18vmax;
+    background: radial-gradient(circle at center, var(--lg-hue-a) 0%, transparent 66%);
+    animation: lg-drift-a 38s ease-in-out infinite alternate;
+  }
+
+  .lg-blob-b {
+    top: -10vmax;
+    right: -26vmax;
+    background: radial-gradient(circle at center, var(--lg-hue-b) 0%, transparent 66%);
+    animation: lg-drift-b 46s ease-in-out infinite alternate;
+  }
+
+  .lg-blob-c {
+    bottom: -30vmax;
+    left: 12vmax;
+    background: radial-gradient(circle at center, var(--lg-hue-c) 0%, transparent 66%);
+    animation: lg-drift-c 52s ease-in-out infinite alternate;
+  }
+
+  /* A fine dot lattice gives the glass something crisp to refract. */
+  .lg-wallpaper::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle at center, color-mix(in oklab, var(--foreground) 22%, transparent) 1px, transparent 1.6px);
+    background-size: 26px 26px;
+    opacity: 0.4;
+    -webkit-mask-image: radial-gradient(ellipse at 50% 30%, #000 0%, transparent 78%);
+    mask-image: radial-gradient(ellipse at 50% 30%, #000 0%, transparent 78%);
+  }
+
+  @keyframes lg-drift-a {
+    to { transform: translate3d(14vmax, 10vmax, 0) scale(1.12); }
+  }
+  @keyframes lg-drift-b {
+    to { transform: translate3d(-16vmax, 14vmax, 0) scale(0.92); }
+  }
+  @keyframes lg-drift-c {
+    to { transform: translate3d(18vmax, -12vmax, 0) scale(1.08); }
+  }
+
+  /* ======================================================================
+   * Panels (top-level glass)
+   * ==================================================================== */
+
+  /*
+   * A panel is three stacked layers inside one isolated stacking context:
+   *
+   *   ::before        backdrop blur + saturation, tint, sheen and pointer glow
+   *   .lg-refract     optional SVG displacement of everything below it (see
+   *                   useGlassRefraction); an empty <span> rendered by <Card refract>
+   *   ::after         specular rim + inner light, above the content
+   *
+   * The panel element itself has NO backdrop-filter. That keeps it from being a
+   * "backdrop root", so the layers above can actually see the wallpaper, and it
+   * avoids the panel becoming the containing block of position:fixed children.
+   */
+  .lg-panel {
+    --lg-radius: 30px;
+    position: relative;
+    isolation: isolate;
+    border-radius: var(--lg-radius);
+    box-shadow: var(--lg-shadow);
+  }
+
+  .lg-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background-color: var(--lg-fill);
+    background-image:
+      radial-gradient(360px circle at var(--mx, -500px) var(--my, -500px), var(--lg-glow), transparent 70%),
+      linear-gradient(155deg, var(--lg-sheen), rgb(255 255 255 / 0) 42%, rgb(255 255 255 / 0) 72%, color-mix(in oklab, var(--lg-sheen) 35%, transparent));
+    -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+    backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  }
+
+  .lg-refract {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  .lg-panel::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    padding: 1.5px;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(
+      135deg,
+      rgb(255 255 255 / 0.95) 0%,
+      rgb(255 255 255 / 0.12) 26%,
+      rgb(255 255 255 / 0.04) 55%,
+      rgb(255 255 255 / 0.22) 78%,
+      rgb(255 255 255 / 0.75) 100%
+    );
+    /* Hollow out the middle so only a 1.5px directional rim remains. */
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    opacity: 0.85;
+  }
+
+  .dark .lg-panel::after {
+    opacity: 0.55;
+  }
+
+  /* Squircle corners (Chromium 139+), same idea as Glass.cornerSmoothing. */
+  @supports (corner-shape: squircle) {
+    .lg-panel {
+      --lg-radius: 42px;
+      corner-shape: squircle;
+    }
+    .lg-panel::before,
+    .lg-panel::after,
+    .lg-refract {
+      corner-shape: inherit;
+    }
+  }
+
+  /* Glass inside glass: nothing left to blur, so only tint + rim remain. */
+  .lg-panel .lg-panel {
+    --lg-radius: 24px;
+    box-shadow: var(--lg-shadow-small);
+  }
+  .lg-panel .lg-panel::before {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background-color: color-mix(in oklab, #fff 22%, transparent);
+  }
+  .dark .lg-panel .lg-panel::before {
+    background-color: color-mix(in oklab, #fff 6%, transparent);
+  }
+  .lg-panel .lg-panel .lg-refract {
+    display: none;
+  }
+
+  @supports (corner-shape: squircle) {
+    .lg-panel .lg-panel {
+      --lg-radius: 32px;
+    }
+  }
+
+  .lg-header {
+    --lg-radius: 26px;
+  }
+  @supports (corner-shape: squircle) {
+    .lg-header {
+      --lg-radius: 34px;
+    }
+  }
+
+  /* Recessed glass: lists, code blocks, the keyboard canvas. */
+  .lg-well {
+    background-color: var(--lg-well);
+    border-radius: 20px;
+    box-shadow:
+      inset 0 1px 3px rgb(15 23 42 / 0.14),
+      inset 0 0 0 1px var(--lg-edge-dim),
+      0 1px 0 0 rgb(255 255 255 / 0.35);
+  }
+  .dark .lg-well {
+    box-shadow:
+      inset 0 1px 4px rgb(0 0 0 / 0.5),
+      inset 0 0 0 1px var(--lg-edge-dim),
+      0 1px 0 0 rgb(255 255 255 / 0.05);
+  }
+  @supports (corner-shape: squircle) {
+    .lg-well {
+      border-radius: 28px;
+      corner-shape: squircle;
+    }
+  }
+
+  /* ======================================================================
+   * Buttons
+   * ==================================================================== */
+
+  .lg-btn {
+    position: relative;
+    isolation: isolate;
+    color: var(--foreground);
+    background-color: var(--lg-fill-hover);
+    background-image:
+      radial-gradient(120px circle at var(--mx, -200px) var(--my, -200px), rgb(255 255 255 / 0.5), transparent 70%),
+      linear-gradient(180deg, rgb(255 255 255 / 0.4), rgb(255 255 255 / 0) 55%);
+    box-shadow:
+      var(--lg-shadow-small),
+      inset 0 1px 0 0 var(--lg-edge),
+      inset 0 0 0 1px var(--lg-edge-dim),
+      inset 0 -8px 12px -8px var(--lg-inner-shade);
+    transition:
+      transform 0.4s var(--lg-spring),
+      background-color 0.25s var(--lg-ease),
+      box-shadow 0.25s var(--lg-ease),
+      opacity 0.2s;
+  }
+  .dark .lg-btn {
+    background-image:
+      radial-gradient(120px circle at var(--mx, -200px) var(--my, -200px), rgb(255 255 255 / 0.22), transparent 70%),
+      linear-gradient(180deg, rgb(255 255 255 / 0.14), rgb(255 255 255 / 0) 55%);
+  }
+
+  .lg-btn:hover:not(:disabled) {
+    transform: translateY(-1px) scale(1.015);
+    background-color: var(--lg-fill-strong);
+  }
+
+  .lg-btn:active:not(:disabled) {
+    transform: scale(0.955);
+    transition-duration: 0.12s;
+    box-shadow:
+      0 1px 1px rgb(15 23 42 / 0.1),
+      inset 0 1px 0 0 var(--lg-edge),
+      inset 0 0 0 1px var(--lg-edge-dim),
+      inset 0 2px 6px rgb(15 23 42 / 0.12);
+  }
+
+  .lg-btn:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--primary) 75%, transparent);
+    outline-offset: 2px;
+  }
+
+  .lg-btn-primary {
+    color: var(--primary-foreground);
+    background-color: color-mix(in oklab, var(--primary) 88%, transparent);
+    background-image:
+      radial-gradient(120px circle at var(--mx, -200px) var(--my, -200px), rgb(255 255 255 / 0.45), transparent 70%),
+      linear-gradient(180deg, rgb(255 255 255 / 0.38), rgb(255 255 255 / 0) 55%);
+    box-shadow:
+      0 1px 1px rgb(15 23 42 / 0.16),
+      0 10px 22px -8px color-mix(in oklab, var(--primary) 70%, transparent),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.6),
+      inset 0 0 0 1px rgb(255 255 255 / 0.22),
+      inset 0 -8px 12px -8px rgb(0 0 0 / 0.25);
+  }
+  .lg-btn-primary:hover:not(:disabled) {
+    background-color: var(--primary);
+  }
+
+  .lg-btn-danger {
+    color: #fff;
+    background-color: color-mix(in oklab, var(--destructive) 86%, transparent);
+    box-shadow:
+      0 1px 1px rgb(15 23 42 / 0.16),
+      0 10px 22px -8px color-mix(in oklab, var(--destructive) 70%, transparent),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.5),
+      inset 0 0 0 1px rgb(255 255 255 / 0.2);
+  }
+  .lg-btn-danger:hover:not(:disabled) {
+    background-color: var(--destructive);
+  }
+
+  .lg-btn-ghost {
+    background-color: transparent;
+    background-image: none;
+    box-shadow: none;
+  }
+  .lg-btn-ghost:hover:not(:disabled) {
+    background-color: var(--lg-fill);
+    box-shadow:
+      inset 0 1px 0 0 var(--lg-edge),
+      inset 0 0 0 1px var(--lg-edge-dim);
+  }
+
+  .lg-btn-outline {
+    background-color: var(--lg-fill);
+  }
+
+  .lg-btn-secondary {
+    background-color: var(--lg-secondary);
+  }
+  .lg-btn-secondary:hover:not(:disabled) {
+    background-color: var(--lg-fill-hover);
+  }
+
+  .lg-btn-link {
+    background: none;
+    box-shadow: none;
+    color: var(--primary);
+    text-underline-offset: 4px;
+  }
+  .lg-btn-link:hover:not(:disabled) {
+    transform: none;
+    text-decoration: underline;
+  }
+
+  /* ======================================================================
+   * Fields
+   * ==================================================================== */
+
+  .lg-field {
+    color: var(--foreground);
+    background-color: color-mix(in oklab, #fff 34%, transparent);
+    border-radius: 16px;
+    box-shadow:
+      inset 0 1px 3px rgb(15 23 42 / 0.16),
+      inset 0 0 0 1px var(--lg-edge-dim),
+      0 1px 0 0 rgb(255 255 255 / 0.5);
+    transition: box-shadow 0.25s var(--lg-ease), background-color 0.25s var(--lg-ease);
+  }
+  .dark .lg-field {
+    background-color: rgb(0 0 0 / 0.28);
+    box-shadow:
+      inset 0 1px 4px rgb(0 0 0 / 0.5),
+      inset 0 0 0 1px var(--lg-edge-dim),
+      0 1px 0 0 rgb(255 255 255 / 0.05);
+  }
+  .lg-field:focus-visible,
+  .lg-field[data-state='open'] {
+    outline: none;
+    background-color: var(--lg-fill-strong);
+    box-shadow:
+      inset 0 1px 3px rgb(15 23 42 / 0.1),
+      inset 0 0 0 1px color-mix(in oklab, var(--primary) 70%, transparent),
+      0 0 0 4px color-mix(in oklab, var(--primary) 26%, transparent);
+  }
+  .lg-field::placeholder {
+    color: var(--muted-foreground);
+  }
+
+  /* ======================================================================
+   * Popover (select dropdown) — top level, so it may blur
+   * ==================================================================== */
+
+  .lg-popover {
+    color: var(--popover-foreground);
+    background-color: var(--lg-popover);
+    border-radius: 22px;
+    -webkit-backdrop-filter: blur(30px) saturate(1.9);
+    backdrop-filter: blur(30px) saturate(1.9);
+    box-shadow:
+      0 24px 60px -12px rgb(15 23 42 / 0.4),
+      0 2px 6px rgb(15 23 42 / 0.12),
+      inset 0 1px 0 0 var(--lg-edge),
+      inset 0 0 0 1px var(--lg-edge-dim);
+  }
+  .dark .lg-popover {
+    box-shadow:
+      0 24px 60px -12px rgb(0 0 0 / 0.7),
+      0 2px 6px rgb(0 0 0 / 0.4),
+      inset 0 1px 0 0 var(--lg-edge),
+      inset 0 0 0 1px var(--lg-edge-dim);
+  }
+  @supports (corner-shape: squircle) {
+    .lg-popover {
+      border-radius: 30px;
+      corner-shape: squircle;
+    }
+  }
+
+  .lg-option {
+    border-radius: 12px;
+    transition: background-color 0.15s var(--lg-ease);
+  }
+  .lg-option:focus,
+  .lg-option[data-highlighted] {
+    background-color: color-mix(in oklab, var(--primary) 22%, transparent);
+    color: var(--foreground);
+  }
+
+  /* ======================================================================
+   * Segmented control with a sliding glass thumb
+   * ==================================================================== */
+
+  .lg-segmented {
+    position: relative;
+    display: inline-grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    padding: 4px;
+    border-radius: 999px;
+    background-color: var(--lg-well);
+    box-shadow:
+      inset 0 1px 3px rgb(15 23 42 / 0.16),
+      inset 0 0 0 1px var(--lg-edge-dim),
+      0 1px 0 0 rgb(255 255 255 / 0.4);
+  }
+  .dark .lg-segmented {
+    box-shadow:
+      inset 0 1px 4px rgb(0 0 0 / 0.5),
+      inset 0 0 0 1px var(--lg-edge-dim),
+      0 1px 0 0 rgb(255 255 255 / 0.05);
+  }
+
+  .lg-segmented-thumb {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    width: calc((100% - 8px) / var(--lg-count, 2));
+    border-radius: 999px;
+    pointer-events: none;
+    background-color: color-mix(in oklab, #fff 78%, transparent);
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.7), rgb(255 255 255 / 0) 60%);
+    box-shadow:
+      0 1px 2px rgb(15 23 42 / 0.18),
+      0 6px 14px -4px rgb(15 23 42 / 0.28),
+      inset 0 1px 0 0 #fff,
+      inset 0 0 0 1px rgb(255 255 255 / 0.5);
+    transform: translateX(calc(var(--lg-index, 0) * 100%));
+    transition: transform 0.5s var(--lg-spring);
+  }
+  .dark .lg-segmented-thumb {
+    background-color: color-mix(in oklab, #fff 20%, transparent);
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.22), rgb(255 255 255 / 0) 60%);
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.4),
+      0 6px 14px -4px rgb(0 0 0 / 0.6),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.5),
+      inset 0 0 0 1px rgb(255 255 255 / 0.14);
+  }
+
+  .lg-segmented-item {
+    position: relative;
+    z-index: 1;
+    appearance: none;
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    padding: 0.5rem 1.5rem;
+    border-radius: 999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.25rem;
+    white-space: nowrap;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    transition: color 0.25s var(--lg-ease), transform 0.3s var(--lg-spring);
+  }
+  .lg-segmented-item:hover {
+    color: var(--foreground);
+  }
+  .lg-segmented-item:active {
+    transform: scale(0.96);
+  }
+  .lg-segmented-item[aria-selected='true'],
+  .lg-segmented-item[aria-pressed='true'] {
+    color: var(--foreground);
+    font-weight: 600;
+  }
+  .lg-segmented-item:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--primary) 75%, transparent);
+    outline-offset: 1px;
+  }
+  .lg-segmented-compact .lg-segmented-item {
+    padding: 0.375rem 0.875rem;
+  }
+
+  /* ======================================================================
+   * Keycaps (the on-screen key picker)
+   * ==================================================================== */
+
+  .lg-key {
+    position: relative;
+    border-radius: 10px;
+    color: var(--foreground);
+    background-color: color-mix(in oklab, #fff 46%, transparent);
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0) 60%);
+    box-shadow:
+      0 1px 1px rgb(15 23 42 / 0.14),
+      0 4px 8px -3px rgb(15 23 42 / 0.2),
+      inset 0 1px 0 0 var(--lg-edge),
+      inset 0 0 0 1px var(--lg-edge-dim),
+      inset 0 -4px 6px -4px var(--lg-inner-shade);
+    transition:
+      transform 0.3s var(--lg-spring),
+      background-color 0.2s var(--lg-ease),
+      box-shadow 0.2s var(--lg-ease),
+      color 0.2s;
+  }
+  .dark .lg-key {
+    background-color: color-mix(in oklab, #fff 11%, transparent);
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.16), rgb(255 255 255 / 0) 60%);
+  }
+  .lg-key:hover:not(:disabled) {
+    transform: translateY(-1px);
+    background-color: var(--lg-fill-strong);
+  }
+  .lg-key:active:not(:disabled) {
+    transform: translateY(1px) scale(0.96);
+    box-shadow:
+      inset 0 1px 0 0 var(--lg-edge-dim),
+      inset 0 0 0 1px var(--lg-edge-dim),
+      inset 0 2px 5px rgb(15 23 42 / 0.16);
+    transition-duration: 0.1s;
+  }
+  .lg-key:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--primary) 75%, transparent);
+    outline-offset: 2px;
+  }
+  .lg-key:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  /* The key the user is about to assign. */
+  .lg-key[data-state='target'] {
+    color: var(--primary-foreground);
+    background-color: color-mix(in oklab, var(--primary) 90%, transparent);
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.4), rgb(255 255 255 / 0) 60%);
+    box-shadow:
+      0 1px 1px rgb(15 23 42 / 0.16),
+      0 8px 18px -6px color-mix(in oklab, var(--primary) 75%, transparent),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.6),
+      inset 0 0 0 1px rgb(255 255 255 / 0.25);
+  }
+  /* The key's current mapping. */
+  .lg-key[data-state='current'] {
+    color: color-mix(in oklab, var(--primary) 85%, var(--foreground));
+    background-color: color-mix(in oklab, var(--primary) 20%, transparent);
+    box-shadow:
+      0 1px 1px rgb(15 23 42 / 0.1),
+      inset 0 1px 0 0 var(--lg-edge),
+      inset 0 0 0 1.5px color-mix(in oklab, var(--primary) 80%, transparent);
+  }
+
+  /* ======================================================================
+   * Chips / badges
+   * ==================================================================== */
+
+  .lg-chip {
+    border-radius: 999px;
+    box-shadow: inset 0 1px 0 0 var(--lg-edge), inset 0 0 0 1px var(--lg-edge-dim);
+  }
+  .lg-chip-default {
+    color: var(--primary-foreground);
+    background-color: color-mix(in oklab, var(--primary) 88%, transparent);
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.55), inset 0 0 0 1px rgb(255 255 255 / 0.2);
+  }
+  .lg-chip-secondary {
+    color: var(--secondary-foreground);
+    background-color: var(--lg-secondary);
+  }
+  .lg-chip-outline {
+    color: var(--foreground);
+    background-color: var(--lg-fill);
+  }
+  .lg-chip-destructive {
+    color: #fff;
+    background-color: color-mix(in oklab, var(--destructive) 85%, transparent);
+  }
+  .lg-chip-success {
+    color: color-mix(in oklab, #16a34a 88%, var(--foreground));
+    background-color: color-mix(in oklab, #22c55e 22%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, #22c55e 45%, transparent);
+  }
+
+  /* ======================================================================
+   * Icon tiles / step dots
+   * ==================================================================== */
+
+  .lg-tile {
+    border-radius: 16px;
+    color: var(--foreground);
+    background-color: var(--lg-fill-hover);
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.45), rgb(255 255 255 / 0) 60%);
+    box-shadow:
+      var(--lg-shadow-small),
+      inset 0 1px 0 0 var(--lg-edge),
+      inset 0 0 0 1px var(--lg-edge-dim);
+  }
+  .lg-tile-primary {
+    color: var(--primary-foreground);
+    background-color: color-mix(in oklab, var(--primary) 88%, transparent);
+    box-shadow:
+      0 1px 1px rgb(15 23 42 / 0.14),
+      0 10px 20px -8px color-mix(in oklab, var(--primary) 70%, transparent),
+      inset 0 1px 0 0 rgb(255 255 255 / 0.55),
+      inset 0 0 0 1px rgb(255 255 255 / 0.2);
+  }
+  @supports (corner-shape: squircle) {
+    .lg-tile {
+      border-radius: 24px;
+      corner-shape: squircle;
+    }
+  }
+
+  /* ======================================================================
+   * Lists
+   * ==================================================================== */
+
+  .lg-list-item {
+    transition: background-color 0.2s var(--lg-ease);
+  }
+  .lg-list-item:hover:not(:disabled) {
+    background-color: color-mix(in oklab, var(--primary) 12%, transparent);
+  }
+  .lg-list-item[data-selected='true'],
+  .lg-list-item[aria-selected='true'] {
+    color: var(--primary-foreground);
+    font-weight: 500;
+    background-color: color-mix(in oklab, var(--primary) 88%, transparent);
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.4);
+  }
+  .lg-divide > * + * {
+    border-top: 1px solid var(--lg-border);
+  }
+
+  /* ======================================================================
+   * Alerts
+   * ==================================================================== */
+
+  .lg-alert {
+    border-radius: 20px;
+    background-color: var(--lg-well);
+    box-shadow: inset 0 1px 3px rgb(15 23 42 / 0.1), inset 0 0 0 1px var(--lg-edge-dim);
+  }
+  .lg-alert-primary {
+    background-color: color-mix(in oklab, var(--primary) 12%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary) 32%, transparent);
+  }
+  .lg-alert-destructive {
+    background-color: color-mix(in oklab, var(--destructive) 12%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--destructive) 38%, transparent);
+  }
+
+  /* ======================================================================
+   * Switch
+   * ==================================================================== */
+
+  .lg-switch {
+    width: 3.25rem;
+    height: 2rem;
+    border-radius: 999px;
+    background-color: var(--lg-well-strong);
+    box-shadow: inset 0 1px 3px rgb(15 23 42 / 0.22), inset 0 0 0 1px var(--lg-edge-dim);
+    transition: background-color 0.3s var(--lg-ease);
+  }
+  .lg-switch[data-state='checked'] {
+    background-color: color-mix(in oklab, var(--primary) 90%, transparent);
+    box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.2), inset 0 0 0 1px rgb(255 255 255 / 0.25);
+  }
+  .lg-switch-thumb {
+    display: block;
+    width: 1.625rem;
+    height: 1.625rem;
+    border-radius: 999px;
+    background-color: #fff;
+    background-image: linear-gradient(180deg, #fff, rgb(235 238 245));
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.3), 0 4px 10px -2px rgb(15 23 42 / 0.3), inset 0 1px 0 #fff;
+    transform: translateX(0.1875rem);
+    transition: transform 0.45s var(--lg-spring), width 0.25s var(--lg-ease);
+  }
+  .lg-switch:active .lg-switch-thumb {
+    width: 1.95rem;
+  }
+  .lg-switch[data-state='checked'] .lg-switch-thumb {
+    transform: translateX(1.4375rem);
+  }
+  .lg-switch[data-state='checked']:active .lg-switch-thumb {
+    transform: translateX(1.1rem);
+  }
+
+  /* ======================================================================
+   * Slider
+   * ==================================================================== */
+
+  .lg-slider-track {
+    height: 0.5rem;
+    border-radius: 999px;
+    background-color: var(--lg-well-strong);
+    box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.2), inset 0 0 0 1px var(--lg-edge-dim);
+  }
+  .lg-slider-range {
+    border-radius: 999px;
+    background-image: linear-gradient(180deg, rgb(255 255 255 / 0.35), rgb(255 255 255 / 0));
+    background-color: var(--primary);
+  }
+  .lg-slider-thumb {
+    display: block;
+    width: 2rem;
+    height: 1.375rem;
+    border-radius: 999px;
+    cursor: grab;
+    background-color: #fff;
+    background-image: linear-gradient(180deg, #fff, rgb(232 236 244));
+    box-shadow:
+      0 1px 2px rgb(15 23 42 / 0.3),
+      0 6px 14px -3px rgb(15 23 42 / 0.32),
+      inset 0 1px 0 #fff,
+      inset 0 0 0 1px rgb(255 255 255 / 0.6);
+    transition: transform 0.35s var(--lg-spring), box-shadow 0.2s;
+  }
+  .lg-slider-thumb:hover {
+    transform: scale(1.06);
+  }
+  .lg-slider-thumb:active {
+    cursor: grabbing;
+    transform: scale(1.14);
+  }
+  .lg-slider-thumb:focus-visible {
+    outline: none;
+    box-shadow:
+      0 1px 2px rgb(15 23 42 / 0.3),
+      0 0 0 4px color-mix(in oklab, var(--primary) 34%, transparent),
+      inset 0 1px 0 #fff;
+  }
+
+  /* ======================================================================
+   * Toast (sonner)
+   * ==================================================================== */
+
+  .lg-toast {
+    color: var(--popover-foreground) !important;
+    background: var(--lg-popover) !important;
+    border: none !important;
+    border-radius: 24px !important;
+    -webkit-backdrop-filter: blur(26px) saturate(1.9);
+    backdrop-filter: blur(26px) saturate(1.9);
+    box-shadow:
+      0 20px 50px -12px rgb(15 23 42 / 0.4),
+      inset 0 1px 0 0 var(--lg-edge),
+      inset 0 0 0 1px var(--lg-edge-dim) !important;
+  }
+
+  /* Color swatches in the lighting tab */
+  .lg-swatch {
+    border-radius: 999px;
+    box-shadow:
+      0 1px 2px rgb(15 23 42 / 0.3),
+      inset 0 1px 0 rgb(255 255 255 / 0.6),
+      inset 0 0 0 1.5px rgb(255 255 255 / 0.5);
+    transition: transform 0.35s var(--lg-spring), box-shadow 0.2s;
+  }
+  .lg-swatch:hover {
+    transform: scale(1.14);
+  }
+  .lg-swatch:active {
+    transform: scale(0.94);
+  }
+  .lg-swatch:focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--primary) 80%, transparent);
+    outline-offset: 2px;
+  }
+
+  /* Modal scrim. Deliberately no backdrop-filter: a filtered scrim would become
+     the backdrop root and the modal panel could no longer blur the page. */
+  .lg-scrim {
+    background-color: rgb(15 23 42 / 0.28);
+  }
+  .dark .lg-scrim {
+    background-color: rgb(0 0 0 / 0.5);
+  }
+
+  /* ======================================================================
+   * Liquid DOM (WebGPU) mode
+   *
+   * `LiquidGlassEngine` draws the wallpaper and the real glass in a canvas
+   * behind the page and marks every element it covers with `data-lg-plate`.
+   * Those elements keep their layout, text and hover motion but hand their
+   * glass look to the renderer. DOM always paints above the canvas, so:
+   *  - the sticky header becomes static (page content must not slide over it),
+   *  - popovers, toasts and modals keep the CSS glass above (see
+   *    OVERLAY_SELECTOR in glassPresets.ts).
+   * ==================================================================== */
+
+  html.lg-gpu .lg-wallpaper {
+    display: none;
+  }
+
+  /* !important: Tailwind's `sticky` utility lives in a later cascade layer. */
+  html.lg-gpu .lg-sticky-top {
+    position: static !important;
+  }
+
+  /* !important: hover/active rules and Tailwind utilities must not bring the CSS glass back. */
+  html.lg-gpu [data-lg-plate] {
+    background: none !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  html.lg-gpu [data-lg-plate]::before,
+  html.lg-gpu [data-lg-plate]::after,
+  html.lg-gpu [data-lg-plate] > .lg-refract {
+    display: none;
+  }
+
+  /* Text on plated surfaces sits on canvas glass, so keep it crisp. */
+  html.lg-gpu [data-lg-plate='panel'] {
+    color: var(--card-foreground);
+  }
+
+  /* ======================================================================
+   * Accessibility fallbacks
+   * ==================================================================== */
+
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .lg-panel,
+    .lg-popover,
+    .lg-toast {
+      background-color: color-mix(in oklab, var(--background) 86%, transparent) !important;
+    }
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    :root {
+      --lg-fill: color-mix(in oklab, var(--background) 92%, transparent);
+      --lg-fill-hover: color-mix(in oklab, var(--background) 96%, transparent);
+      --lg-fill-strong: var(--background);
+      --lg-popover: var(--background);
+    }
+    .lg-panel,
+    .lg-popover,
+    .lg-toast {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lg-blob {
+      animation: none;
+    }
+    .lg-btn,
+    .lg-key,
+    .lg-swatch,
+    .lg-segmented-thumb,
+    .lg-switch-thumb,
+    .lg-slider-thumb {
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

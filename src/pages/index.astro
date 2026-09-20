@@ -1,0 +1,185 @@
+---
+import { getRKDevices } from '../utils/rkConfig.server';
+import { buildImageManifest } from '../utils/buildImageManifest';
+import { buildLedManifest, serializeLedManifest } from '../utils/buildLedManifest';
+import App from '../components/App';
+import '../index.css';
+
+// Load keyboards and manifests at build time
+const devices = getRKDevices();
+const keyboards = Array.from(devices.entries()).map(([pid, name]) => ({ pid, name }));
+const imageManifest = await buildImageManifest();
+const ledManifest = buildLedManifest();
+const ledManifestJson = serializeLedManifest(ledManifest);
+
+// SEO and metadata
+const siteName = 'Kludge Knight';
+const title = 'Kludge Knight - Royal Kludge Keyboard Remapper & Lighting Controller';
+const description = 'Free browser-based key remapper and lighting controller for Royal Kludge keyboards. Works on Mac, Linux, and Windows - no installation required. Alternative to official RK software.';
+const pageUrl = Astro.url.href;
+const keywords = 'Royal Kludge, RK keyboard, key remapper, keyboard software, RGB lighting, WebHID, browser keyboard configuration, Mac, Linux, macOS, no install';
+
+// JSON-LD structured data
+const structuredData = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: siteName,
+  description,
+  url: pageUrl,
+  applicationCategory: 'UtilityApplication',
+  operatingSystem: 'macOS, Windows, Linux',
+  browserRequirements: 'Chrome, Edge, or Opera (WebHID support required)',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD'
+  },
+  author: {
+    '@type': 'Person',
+    name: 'Vince Mi'
+  }
+};
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Primary Meta Tags -->
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="keywords" content={keywords} />
+    <link rel="canonical" href={pageUrl} />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={pageUrl} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:site_name" content={siteName} />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
+
+    <!-- Self-hosted Inter font (fallback for some themes) -->
+    <link rel="stylesheet" href={`${import.meta.env.BASE_URL}fonts/inter/inter.css`} />
+
+    <!-- Preconnect to Google Fonts for faster font loading -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- Theme initialization (prevent FOUC) -->
+    <script is:inline>
+      (function() {
+        // Apply light/dark mode
+        const theme = localStorage.getItem('theme') || 'system';
+        const effective = theme === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : theme;
+        document.documentElement.setAttribute('data-theme', effective);
+        if (effective === 'dark') {
+          document.documentElement.classList.add('dark');
+        }
+
+        // Apply theme preset colors and styles instantly
+        const themeStylesJson = localStorage.getItem('themeStyles');
+        if (themeStylesJson) {
+          try {
+            const themeStyles = JSON.parse(themeStylesJson);
+            const styles = themeStyles[effective];
+
+            if (styles) {
+              const root = document.documentElement;
+
+              // Preload the theme font for faster loading (display=swap shows fallback while loading)
+              // Skip Inter since it's self-hosted
+              if (styles['font-sans'] && !styles['font-sans'].includes('system-ui')) {
+                const fontName = styles['font-sans'].split(',')[0].trim().replace(/['"]/g, '');
+                const systemFonts = ['Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Georgia', 'Verdana', 'Inter'];
+                if (!systemFonts.includes(fontName)) {
+                  const preloadLink = document.createElement('link');
+                  preloadLink.rel = 'preload';
+                  preloadLink.as = 'style';
+                  preloadLink.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName)}:wght@400;500;600;700&display=swap`;
+                  document.head.appendChild(preloadLink);
+                }
+              }
+
+              // Apply all theme properties except fonts (fonts load async)
+              Object.entries(styles).forEach(([key, value]) => {
+                if (typeof value === 'string' && !key.startsWith('font-')) {
+                  root.style.setProperty(`--${key}`, value);
+                }
+              });
+
+              // Build shadows from theme properties
+              const shadowColor = styles['shadow-color'];
+              const shadowOpacity = styles['shadow-opacity'];
+              const shadowBlur = styles['shadow-blur'];
+              const shadowSpread = styles['shadow-spread'];
+              const shadowOffsetX = styles['shadow-offset-x'];
+              const shadowOffsetY = styles['shadow-offset-y'];
+
+              if (shadowColor && shadowOpacity && shadowBlur !== undefined && shadowOffsetX && shadowOffsetY) {
+                const spread = shadowSpread || '0px';
+                const opacityNum = parseFloat(shadowOpacity) || 0.1;
+
+                // Build shadow string
+                let shadow;
+                if (shadowColor.includes('/') || shadowColor.includes('rgba')) {
+                  shadow = `${shadowOffsetX} ${shadowOffsetY} ${shadowBlur} ${spread} ${shadowColor}`;
+                } else {
+                  shadow = `${shadowOffsetX} ${shadowOffsetY} ${shadowBlur} ${spread} ${shadowColor.replace(')', ` / ${opacityNum})`)}`;
+                }
+
+                // Apply to all shadow utilities
+                root.style.setProperty('--shadow-xs', shadow);
+                root.style.setProperty('--shadow-sm', shadow);
+                root.style.setProperty('--shadow', shadow);
+                root.style.setProperty('--shadow-md', shadow);
+                root.style.setProperty('--shadow-lg', shadow);
+                root.style.setProperty('--shadow-xl', shadow);
+                root.style.setProperty('--shadow-2xl', shadow);
+              }
+            }
+          } catch {
+            // Silently fail if JSON is invalid
+          }
+        }
+      })();
+    </script>
+
+    <!-- Google tag (gtag.js) -->
+    <script is:inline async src="https://www.googletagmanager.com/gtag/js?id=G-YBJQ3DKPZR"></script>
+    <script is:inline>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        // eslint-disable-next-line prefer-rest-params
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('config', 'G-YBJQ3DKPZR');
+    </script>
+
+    <!-- JSON-LD Structured Data -->
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(structuredData)} />
+
+    <script src="https://tweakcn.com/live-preview.min.js"></script>
+  </head>
+  <body>
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-50 focus:p-4 focus:bg-primary focus:text-primary-foreground">
+      Skip to main content
+    </a>
+    <main id="main-content">
+      <App client:load initialKeyboards={keyboards} imageManifest={imageManifest} ledManifest={ledManifestJson} />
+    </main>
+  </body>
+</html>

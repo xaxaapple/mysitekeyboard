@@ -1,0 +1,33 @@
+export {
+  SDF_EPSILON,
+  aabbArea,
+  aabbFromPoints,
+  blendSupportScaleForSubmersion,
+  clamp01,
+  estimateCellSubmersion,
+  estimateShapeGridSubmersions,
+  intersectBounds,
+  intersectConvexPolygons,
+  lerp,
+  normalAngleGate,
+  normalGateForNormals,
+  polygonArea,
+  polygonSignedArea,
+  polygonUnionArea,
+  shapeSubmergedAreaAtGridCenteredLocal,
+  shapeSubmergedAreaAtGridLocal,
+  smoothUnionGatingInfo,
+  smoothUnionWeight,
+} from './sdf'
+
+export type {
+  BoundsRect,
+  SdfSample,
+  ShapeSubmersionCell,
+  ShapeSubmersionEntry,
+  ShapeSubmersionGrid,
+  ShapeSubmersionGridValues,
+  SmoothUnionOptions,
+  ResolvedSmoothUnionOptions,
+  TransformedShapeBounds,
+} from './sdf'
